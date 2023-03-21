@@ -17,12 +17,23 @@
 
 #include "tinyusb.h"
 
+#if CONFIG_ESP_TINYUSB_CDC_ENABLED
+#include "tusb_cdc_acm.h"
+static uint8_t buf[CONFIG_ESP_TINYUSB_CDC_RX_BUFSIZE + 1];
+#endif
+
+#if CONFIG_ESP_TINYUSB_AUDIO_ENABLED
 #include "tusb_audio.h"
 #include "esp_signal_generator.h"
 esp_sig_gen_t sig_gen;
 uint8_t audio_data[CFG_TUD_AUDIO_EP_SZ_IN];
+#endif
 
-static const char *TAG = "USB audio example";
+#if CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
+#include "tusb_net.h"
+#endif
+
+static const char *TAG = "USB example";
 
 /*------------------------------------------*
  *               USB Callback
@@ -31,6 +42,40 @@ void tud_mount_cb(void)
 {
     ESP_LOGI(TAG, "USB mounted.");
 }
+
+/*------------------------------------------*
+ *             USB CDC Callback
+ *------------------------------------------*/
+#if CONFIG_ESP_TINYUSB_CDC_ENABLED
+void tinyusb_cdc_rx_callback(int itf, cdcacm_event_t *event)
+{
+    /* initialization */
+    size_t rx_size = 0;
+
+    /* read */
+    esp_err_t ret = tinyusb_cdcacm_read(itf, buf, CONFIG_ESP_TINYUSB_CDC_RX_BUFSIZE, &rx_size);
+    if (ret == ESP_OK)
+    {
+        buf[rx_size] = '\0';
+        ESP_LOGI(TAG, "Got data (%d bytes): %s", rx_size, buf);
+    }
+    else
+    {
+        ESP_LOGE(TAG, "Read error");
+    }
+
+    /* write back */
+    tinyusb_cdcacm_write_queue(itf, buf, rx_size);
+    tinyusb_cdcacm_write_flush(itf, 0);
+}
+
+void tinyusb_cdc_line_state_changed_callback(int itf, cdcacm_event_t *event)
+{
+    int dtr = event->line_state_changed_data.dtr;
+    int rst = event->line_state_changed_data.rts;
+    ESP_LOGI(TAG, "Line state changed! dtr:%d, rst:%d", dtr, rst);
+}
+#endif
 
 /*------------------------------------------*
  *           USB AUDIO Callback
@@ -62,6 +107,13 @@ bool tud_audio_tx_done_post_load_cb(uint8_t rhport, uint16_t n_bytes_copied, uin
 }
 #endif
 
+#if CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
+/* this is used by this code, ./class/net/net_driver.c, and usb_descriptors.c */
+/* ideally speaking, this should be generated from the hardware's unique ID (if available) */
+/* it is suggested that the first byte is 0x02 to indicate a link-local address */
+const uint8_t tud_network_mac_address[6] = {0x02, 0x02, 0x84, 0x6A, 0x96, 0x00};
+#endif
+
 /*------------------------------------------*
  *                 APP MAIN
  *------------------------------------------*/
@@ -78,7 +130,25 @@ void app_main(void)
 
     ESP_LOGI(TAG, "USB initialization DONE");
 
+#if CONFIG_ESP_TINYUSB_CDC_ENABLED
+    tinyusb_config_cdcacm_t acm_cfg = {
+        .usb_dev = TINYUSB_USBDEV_0,
+        .cdc_port = TINYUSB_CDC_ACM_0,
+        .rx_unread_buf_sz = 64,
+        .callback_rx = &tinyusb_cdc_rx_callback,
+        .callback_rx_wanted_char = NULL,
+        .callback_line_state_changed = NULL,
+        .callback_line_coding_changed = NULL};
+    ESP_ERROR_CHECK(tusb_cdc_acm_init(&acm_cfg));
+#endif
+
+#if CONFIG_ESP_TINYUSB_AUDIO_ENABLED
     esp_sig_gen_config_t sig_gen_cfg = {}; // default configuration from menuconfig
     esp_sig_gen_init(&sig_gen, &sig_gen_cfg);
     tusb_audio_init();
+#endif
+
+#if CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
+    tusb_net_init();
+#endif
 }
