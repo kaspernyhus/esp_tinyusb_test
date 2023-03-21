@@ -1,0 +1,6 @@
+[submodule "components/esp_tinyusb_features"]
+	path = components/esp_tinyusb_features
+	url = git@github.com:kaspernyhus/esp_tinyusb_features.git
+[submodule "components/esp_signal_generator"]
+	path = components/esp_signal_generator
+	url = git@github.com:kaspernyhus/esp_signal_generator.git
