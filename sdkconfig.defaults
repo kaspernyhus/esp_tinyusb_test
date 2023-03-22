@@ -1,0 +1,14 @@
+#
+# ESP TinyUSB Audio
+#
+CONFIG_ENABLE_ESP_TINYUSB_AUDIO=y
+
+#
+# Audio Device Class (UAC2)
+#
+CONFIG_ESP_TINYUSB_AUDIO_ENABLED=y
+
+#
+# ESP Signal Generator
+#
+CONFIG_ENABLE_ESP_SIGNAL_GENERATOR=y
