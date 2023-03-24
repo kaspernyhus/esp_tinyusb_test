@@ -23,8 +23,8 @@ static uint8_t buf[CONFIG_ESP_TINYUSB_CDC_RX_BUFSIZE + 1];
 #endif
 
 #if CONFIG_ESP_TINYUSB_AUDIO_ENABLED
-#include "tusb_audio.h"
 #include "esp_signal_generator.h"
+#include "tusb_audio.h"
 esp_sig_gen_t sig_gen;
 uint8_t audio_data[CFG_TUD_AUDIO_EP_SZ_IN];
 #endif
@@ -33,7 +33,7 @@ uint8_t audio_data[CFG_TUD_AUDIO_EP_SZ_IN];
 #include "tusb_net.h"
 #endif
 
-static const char *TAG = "USB example";
+static const char* TAG = "USB example";
 
 /*------------------------------------------*
  *               USB Callback
@@ -47,20 +47,17 @@ void tud_mount_cb(void)
  *             USB CDC Callback
  *------------------------------------------*/
 #if CONFIG_ESP_TINYUSB_CDC_ENABLED
-void tinyusb_cdc_rx_callback(int itf, cdcacm_event_t *event)
+void tinyusb_cdc_rx_callback(int itf, cdcacm_event_t* event)
 {
     /* initialization */
     size_t rx_size = 0;
 
     /* read */
     esp_err_t ret = tinyusb_cdcacm_read(itf, buf, CONFIG_ESP_TINYUSB_CDC_RX_BUFSIZE, &rx_size);
-    if (ret == ESP_OK)
-    {
+    if (ret == ESP_OK) {
         buf[rx_size] = '\0';
         ESP_LOGI(TAG, "Got data (%d bytes): %s", rx_size, buf);
-    }
-    else
-    {
+    } else {
         ESP_LOGE(TAG, "Read error");
     }
 
@@ -69,13 +66,13 @@ void tinyusb_cdc_rx_callback(int itf, cdcacm_event_t *event)
     tinyusb_cdcacm_write_flush(itf, 0);
 }
 
-void tinyusb_cdc_line_state_changed_callback(int itf, cdcacm_event_t *event)
+void tinyusb_cdc_line_state_changed_callback(int itf, cdcacm_event_t* event)
 {
     int dtr = event->line_state_changed_data.dtr;
     int rst = event->line_state_changed_data.rts;
     ESP_LOGI(TAG, "Line state changed! dtr:%d, rst:%d", dtr, rst);
 }
-#endif
+#endif // CONFIG_ESP_TINYUSB_CDC_ENABLED
 
 /*------------------------------------------*
  *           USB AUDIO Callback
@@ -105,14 +102,14 @@ bool tud_audio_tx_done_post_load_cb(uint8_t rhport, uint16_t n_bytes_copied, uin
 
     return true;
 }
-#endif
+#endif // CONFIG_ESP_TINYUSB_AUDIO_ENABLED
 
 #if CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
 /* this is used by this code, ./class/net/net_driver.c, and usb_descriptors.c */
 /* ideally speaking, this should be generated from the hardware's unique ID (if available) */
 /* it is suggested that the first byte is 0x02 to indicate a link-local address */
-const uint8_t tud_network_mac_address[6] = {0x02, 0x02, 0x84, 0x6A, 0x96, 0x00};
-#endif
+const uint8_t tud_network_mac_address[6] = { 0x02, 0x02, 0x84, 0x6A, 0x96, 0x00 };
+#endif // CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
 
 /*------------------------------------------*
  *                 APP MAIN
@@ -138,7 +135,8 @@ void app_main(void)
         .callback_rx = &tinyusb_cdc_rx_callback,
         .callback_rx_wanted_char = NULL,
         .callback_line_state_changed = NULL,
-        .callback_line_coding_changed = NULL};
+        .callback_line_coding_changed = NULL
+    };
     ESP_ERROR_CHECK(tusb_cdc_acm_init(&acm_cfg));
 #endif
 
@@ -149,6 +147,29 @@ void app_main(void)
 #endif
 
 #if CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
+    // Netif configs
+    //
+    esp_netif_ip_info_t ip_info;
+    uint8_t mac[] = { 0, 0, 0, 0, 0, 1 };
+    esp_netif_inherent_config_t netif_common_config = {
+        .flags = ESP_NETIF_FLAG_AUTOUP,
+        .ip_info = (esp_netif_ip_info_t*)&ip_info,
+        .if_key = "TEST",
+        .if_desc = "net_test_if"
+    };
+    esp_netif_set_ip4_addr(&ip_info.ip, 10, 0, 0, 1);
+    esp_netif_set_ip4_addr(&ip_info.gw, 10, 0, 0, 1);
+    esp_netif_set_ip4_addr(&ip_info.netmask, 255, 255, 255, 0);
+
+    esp_netif_config_t config = {
+        .base = &netif_common_config, // use specific behaviour configuration
+        .stack = ESP_NETIF_NETSTACK_DEFAULT_WIFI_STA, // use default WIFI-like network stack configuration
+    };
+    // Netif creation and configuration
+    //
+    ESP_ERROR_CHECK(esp_netif_init());
+    esp_netif_t* netif = esp_netif_new(&config);
+
     tusb_net_init();
-#endif
+#endif // CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
 }
