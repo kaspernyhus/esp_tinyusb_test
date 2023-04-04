@@ -128,13 +128,6 @@ bool tud_audio_tx_done_post_load_cb(uint8_t rhport, uint16_t n_bytes_copied, uin
 /*------------------------------------------*
  *           USB NET Configuration
  *------------------------------------------*/
-static esp_netif_driver_ifconfig_t usb_driver_ifconfig = {
-    .driver_free_rx_buffer = NULL,
-    .transmit = esp_usb_net_transmit,
-    .transmit_wrap = esp_usb_net_transmit_wrap,
-    .handle = "USB" // this IO object is a singleton, its handle uses as a name
-};
-
 void configure_usb_esp_netif(void)
 {
     ESP_ERROR_CHECK(esp_netif_init());
@@ -153,16 +146,14 @@ void configure_usb_esp_netif(void)
 
     esp_netif_config_t usb_netif_cfg = {
         .base = &esp_netif_config,
-        .driver = &usb_driver_ifconfig,
+        .driver = NULL,
         .stack = ESP_NETIF_NETSTACK_DEFAULT_ETH
     };
 
     usb_netif = esp_netif_new(&usb_netif_cfg);
     assert(usb_netif);
 
-    esp_tusb_net_handle_t usb_net_handle = calloc(1, sizeof(esp_tusb_net_handle_t));
-    ESP_LOGI(TAG, "usb_net_handle %p", usb_net_handle);
-    esp_netif_attach(usb_netif, esp_usb_net_new_glue(usb_net_handle));
+    esp_netif_attach(usb_netif, esp_usb_net_new_glue());
 
     esp_netif_ip_info_t ip_info;
     IP4_ADDR(&ip_info.ip, 2, 2, 2, 2);
