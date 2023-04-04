@@ -12,8 +12,14 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "esp_event.h"
 #include "esp_log.h"
+#include "esp_netif.h"
 #include "sdkconfig.h"
+
+// #include "lwip/debug.h"
+// #include "lwip/err.h"
+// #include "lwip/tcp.h"
 
 #include "tinyusb.h"
 
@@ -30,8 +36,23 @@ uint8_t audio_data[CFG_TUD_AUDIO_EP_SZ_IN];
 #endif
 
 #if CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
+#include "esp_netif_types.h"
+#include "tusb_esp_netif_glue.h"
 #include "tusb_net.h"
-#endif
+static esp_netif_t* usb_netif = NULL;
+
+/* this is used by this code, ./class/net/net_driver.c, and usb_descriptors.c */
+/* ideally speaking, this should be generated from the hardware's unique ID (if available) */
+/* it is suggested that the first byte is 0x02 to indicate a link-local address */
+const uint8_t tud_network_mac_address[6] = { 0x02, 0x02, 0x84, 0x6A, 0x96, 0x00 };
+uint8_t mac[6] = { 0x02, 0x02, 0x84, 0x6A, 0x96, 0x00 };
+/* these test data are used to populate the ARP cache so the IPs are known */
+static char arp1[] = {
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x01,
+    0x08, 0x00, 0x06, 0x04, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x0a, 0x00, 0x00, 0x02,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x0a, 0x00, 0x00, 0x01
+};
+#endif // CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
 
 static const char* TAG = "USB example";
 
@@ -104,12 +125,64 @@ bool tud_audio_tx_done_post_load_cb(uint8_t rhport, uint16_t n_bytes_copied, uin
 }
 #endif // CONFIG_ESP_TINYUSB_AUDIO_ENABLED
 
-#if CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
-/* this is used by this code, ./class/net/net_driver.c, and usb_descriptors.c */
-/* ideally speaking, this should be generated from the hardware's unique ID (if available) */
-/* it is suggested that the first byte is 0x02 to indicate a link-local address */
-const uint8_t tud_network_mac_address[6] = { 0x02, 0x02, 0x84, 0x6A, 0x96, 0x00 };
-#endif // CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
+/*------------------------------------------*
+ *           USB NET Configuration
+ *------------------------------------------*/
+static esp_netif_driver_ifconfig_t usb_driver_ifconfig = {
+    .driver_free_rx_buffer = NULL,
+    .transmit = esp_usb_net_transmit,
+    .transmit_wrap = esp_usb_net_transmit_wrap,
+    .handle = "USB" // this IO object is a singleton, its handle uses as a name
+};
+
+void configure_usb_esp_netif(void)
+{
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+
+    // ESP Netif configs
+    esp_netif_ip_info_t netif_ip_info = { 0 };
+    esp_netif_inherent_config_t esp_netif_config = {
+        .flags = (ESP_NETIF_DHCP_SERVER | ESP_NETIF_FLAG_GARP | ESP_NETIF_FLAG_EVENT_IP_MODIFIED),
+        .get_ip_event = IP_EVENT_STA_GOT_IP,
+        .lost_ip_event = IP_EVENT_STA_LOST_IP,
+        .if_key = "USB_ETH",
+        .if_desc = "usb-eth",
+        .route_prio = 101, // one higher than WiFi
+    };
+
+    esp_netif_config_t usb_netif_cfg = {
+        .base = &esp_netif_config,
+        .driver = &usb_driver_ifconfig,
+        .stack = ESP_NETIF_NETSTACK_DEFAULT_ETH
+    };
+
+    usb_netif = esp_netif_new(&usb_netif_cfg);
+    assert(usb_netif);
+
+    esp_tusb_net_handle_t usb_net_handle = calloc(1, sizeof(esp_tusb_net_handle_t));
+    ESP_LOGI(TAG, "usb_net_handle %p", usb_net_handle);
+    esp_netif_attach(usb_netif, esp_usb_net_new_glue(usb_net_handle));
+
+    esp_netif_ip_info_t ip_info;
+    IP4_ADDR(&ip_info.ip, 2, 2, 2, 2);
+    IP4_ADDR(&ip_info.gw, 2, 2, 2, 1);
+    IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0);
+    esp_netif_set_ip_info(usb_netif, &ip_info);
+
+    ESP_ERROR_CHECK(esp_netif_set_mac(usb_netif, mac));
+    esp_netif_action_start(usb_netif, NULL, 0, NULL);
+
+
+    // esp_netif_receive(usb_netif, arp1, sizeof(arp1), NULL);
+
+    // bool up = esp_netif_is_netif_up(usb_netif);
+    // ESP_LOGI(TAG, "netif up?: %s", up == true ? "Yes" : "No");
+
+    ESP_ERROR_CHECK(tusb_net_init(usb_netif));
+    xTaskCreate(usb_net_task, "usb_net_task", 4096, NULL, 6, NULL);
+}
+
 
 /*------------------------------------------*
  *                 APP MAIN
@@ -147,29 +220,7 @@ void app_main(void)
 #endif
 
 #if CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
-    // Netif configs
-    //
-    esp_netif_ip_info_t ip_info;
-    uint8_t mac[] = { 0, 0, 0, 0, 0, 1 };
-    esp_netif_inherent_config_t netif_common_config = {
-        .flags = ESP_NETIF_FLAG_AUTOUP,
-        .ip_info = (esp_netif_ip_info_t*)&ip_info,
-        .if_key = "TEST",
-        .if_desc = "net_test_if"
-    };
-    esp_netif_set_ip4_addr(&ip_info.ip, 10, 0, 0, 1);
-    esp_netif_set_ip4_addr(&ip_info.gw, 10, 0, 0, 1);
-    esp_netif_set_ip4_addr(&ip_info.netmask, 255, 255, 255, 0);
+    configure_usb_esp_netif();
 
-    esp_netif_config_t config = {
-        .base = &netif_common_config, // use specific behaviour configuration
-        .stack = ESP_NETIF_NETSTACK_DEFAULT_WIFI_STA, // use default WIFI-like network stack configuration
-    };
-    // Netif creation and configuration
-    //
-    ESP_ERROR_CHECK(esp_netif_init());
-    esp_netif_t* netif = esp_netif_new(&config);
-
-    tusb_net_init();
 #endif // CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
 }
