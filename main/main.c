@@ -36,7 +36,8 @@ uint8_t audio_data[CFG_TUD_AUDIO_EP_SZ_IN];
 #endif
 
 #if CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
-#include "esp_netif_types.h"
+#include "esp_netif.h"
+#include "tcp_server.h"
 #include "tusb_esp_netif_glue.h"
 #include "tusb_net.h"
 static esp_netif_t* usb_netif = NULL;
@@ -47,11 +48,11 @@ static esp_netif_t* usb_netif = NULL;
 const uint8_t tud_network_mac_address[6] = { 0x02, 0x02, 0x84, 0x6A, 0x96, 0x00 };
 uint8_t mac[6] = { 0x02, 0x02, 0x84, 0x6A, 0x96, 0x00 };
 /* these test data are used to populate the ARP cache so the IPs are known */
-static char arp1[] = {
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x01,
-    0x08, 0x00, 0x06, 0x04, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x0a, 0x00, 0x00, 0x02,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x0a, 0x00, 0x00, 0x01
-};
+// static char arp1[] = {
+//     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x01,
+//     0x08, 0x00, 0x06, 0x04, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x0a, 0x00, 0x00, 0x02,
+//     0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x0a, 0x00, 0x00, 0x01
+// };
 #endif // CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
 
 static const char* TAG = "USB example";
@@ -128,44 +129,91 @@ bool tud_audio_tx_done_post_load_cb(uint8_t rhport, uint16_t n_bytes_copied, uin
 /*------------------------------------------*
  *           USB NET Configuration
  *------------------------------------------*/
+/** Event handler for Ethernet events */
+static void usb_net_event_handler(void* arg, esp_event_base_t event_base,
+    int32_t event_id, void* event_data)
+{
+    switch (event_id) {
+    case ETHERNET_EVENT_CONNECTED: {
+        ESP_LOGI(TAG, "Ethernet Link Up");
+        break;
+    }
+    case ETHERNET_EVENT_DISCONNECTED: {
+        ESP_LOGI(TAG, "Ethernet Link Down");
+        break;
+    }
+    case ETHERNET_EVENT_START: {
+        ESP_LOGI(TAG, "Ethernet Started");
+        break;
+    }
+    case ETHERNET_EVENT_STOP: {
+        ESP_LOGI(TAG, "Ethernet Stopped");
+        break;
+    }
+    default: {
+        break;
+    }
+    }
+}
+
+static void got_ip_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
+{
+    ip_event_got_ip_t* event = (ip_event_got_ip_t*)event_data;
+    const esp_netif_ip_info_t* ip_info = &event->ip_info;
+
+    ESP_LOGI(TAG, "Ethernet Got IP Address");
+    ESP_LOGI(TAG, "~~~~~~~~~~~");
+    ESP_LOGI(TAG, "ETHIP:" IPSTR, IP2STR(&ip_info->ip));
+    ESP_LOGI(TAG, "ETHMASK:" IPSTR, IP2STR(&ip_info->netmask));
+    ESP_LOGI(TAG, "ETHGW:" IPSTR, IP2STR(&ip_info->gw));
+    ESP_LOGI(TAG, "~~~~~~~~~~~");
+}
+
 void configure_usb_esp_netif(void)
 {
+    /* Initialize TCP/IP network interface (should be called only once in application) */
     ESP_ERROR_CHECK(esp_netif_init());
+    /* Create default event loop that running in background */
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    // ESP Netif configs
-    esp_netif_ip_info_t netif_ip_info = { 0 };
-    esp_netif_inherent_config_t esp_netif_config = {
-        .flags = (ESP_NETIF_DHCP_SERVER | ESP_NETIF_FLAG_GARP | ESP_NETIF_FLAG_EVENT_IP_MODIFIED),
-        .get_ip_event = IP_EVENT_STA_GOT_IP,
-        .lost_ip_event = IP_EVENT_STA_LOST_IP,
-        .if_key = "USB_ETH",
-        .if_desc = "usb-eth",
-        .route_prio = 101, // one higher than WiFi
+    const esp_netif_ip_info_t ip_info = {
+        .ip.addr = ESP_IP4TOADDR(192, 168, 7, 1),
+        .netmask.addr = ESP_IP4TOADDR(255, 255, 255, 0),
+        .gw.addr = ESP_IP4TOADDR(0, 0, 0, 0)
+    };
+
+    const esp_netif_inherent_config_t base = {
+        .flags = (esp_netif_flags_t)(ESP_NETIF_FLAG_GARP | ESP_NETIF_FLAG_EVENT_IP_MODIFIED),
+        ESP_COMPILER_DESIGNATED_INIT_AGGREGATE_TYPE_EMPTY(mac)
+            .ip_info
+        = &ip_info,
+        .get_ip_event = IP_EVENT_ETH_GOT_IP,
+        .lost_ip_event = IP_EVENT_ETH_LOST_IP,
+        .if_key = "ETH_DEF",
+        .if_desc = "eth",
+        .route_prio = 50
     };
 
     esp_netif_config_t usb_netif_cfg = {
-        .base = &esp_netif_config,
+        .base = &base,
         .driver = NULL,
-        .stack = ESP_NETIF_NETSTACK_DEFAULT_ETH
+        .stack = ESP_NETIF_NETSTACK_DEFAULT_ETH,
     };
 
+    // esp_netif_config_t usb_netif_cfg = ESP_NETIF_DEFAULT_ETH();
     usb_netif = esp_netif_new(&usb_netif_cfg);
     assert(usb_netif);
 
-    esp_netif_attach(usb_netif, esp_usb_net_new_glue());
+    esp_usb_net_set_default_handlers(usb_netif);
+    ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &usb_net_event_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &got_ip_event_handler, NULL));
 
-    esp_netif_ip_info_t ip_info;
-    IP4_ADDR(&ip_info.ip, 2, 2, 2, 2);
-    IP4_ADDR(&ip_info.gw, 2, 2, 2, 1);
-    IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0);
-    esp_netif_set_ip_info(usb_netif, &ip_info);
-
-    ESP_ERROR_CHECK(esp_netif_set_mac(usb_netif, mac));
-    esp_netif_action_start(usb_netif, NULL, 0, NULL);
+    /* attach Ethernet driver to TCP/IP stack */
+    ESP_ERROR_CHECK(esp_netif_attach(usb_netif, esp_usb_net_new_glue()));
 
 
-    // esp_netif_receive(usb_netif, arp1, sizeof(arp1), NULL);
+    // esp_netif_action_start(usb_netif, NULL, 0, NULL);
+
 
     // bool up = esp_netif_is_netif_up(usb_netif);
     // ESP_LOGI(TAG, "netif up?: %s", up == true ? "Yes" : "No");
@@ -212,6 +260,6 @@ void app_main(void)
 
 #if CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
     configure_usb_esp_netif();
-
+    xTaskCreate(tcp_server_task, "tcp_server1", 4096, (void*)1234, 4, NULL);
 #endif // CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
 }
