@@ -6,9 +6,9 @@
    software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
    CONDITIONS OF ANY KIND, either express or implied.
 */
+#include "esp_log.h"
 #include <string.h>
 #include <sys/param.h>
-#include "esp_log.h"
 
 #include "lwip/err.h"
 #include "lwip/sockets.h"
@@ -18,7 +18,7 @@
 #include "tcp_server.h"
 #include <errno.h>
 
-static const char *TAG = "example";
+static const char* TAG = "tcp_server";
 
 static void do_retransmit(const int sock)
 {
@@ -49,7 +49,7 @@ static void do_retransmit(const int sock)
     } while (len > 0);
 }
 
-void tcp_server_task(void *pvParameters)
+void tcp_server_task(void* pvParameters)
 {
     char addr_str[128];
     int addr_family = AF_INET;
@@ -60,7 +60,7 @@ void tcp_server_task(void *pvParameters)
     ESP_LOGI(TAG, "Start TCP Server...");
 
     if (addr_family == AF_INET) {
-        struct sockaddr_in *dest_addr_ip4 = (struct sockaddr_in *)&dest_addr;
+        struct sockaddr_in* dest_addr_ip4 = (struct sockaddr_in*)&dest_addr;
         dest_addr_ip4->sin_addr.s_addr = htonl(INADDR_ANY);
         dest_addr_ip4->sin_family = AF_INET;
         dest_addr_ip4->sin_port = htons(port);
@@ -78,7 +78,7 @@ void tcp_server_task(void *pvParameters)
 
     ESP_LOGI(TAG, "Socket created");
 
-    int err = bind(listen_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+    int err = bind(listen_sock, (struct sockaddr*)&dest_addr, sizeof(dest_addr));
     if (err != 0) {
         ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
         ESP_LOGE(TAG, "IPPROTO: %d", addr_family);
@@ -98,7 +98,7 @@ void tcp_server_task(void *pvParameters)
 
         struct sockaddr_storage source_addr; // Large enough for both IPv4 or IPv6
         socklen_t addr_len = sizeof(source_addr);
-        int sock = accept(listen_sock, (struct sockaddr *)&source_addr, &addr_len);
+        int sock = accept(listen_sock, (struct sockaddr*)&source_addr, &addr_len);
         if (sock < 0) {
             ESP_LOGE(TAG, "Unable to accept connection: errno %d", errno);
             break;
@@ -106,7 +106,7 @@ void tcp_server_task(void *pvParameters)
 
         // Convert ip address to string
         if (source_addr.ss_family == PF_INET) {
-            inet_ntoa_r(((struct sockaddr_in *)&source_addr)->sin_addr, addr_str, sizeof(addr_str) - 1);
+            inet_ntoa_r(((struct sockaddr_in*)&source_addr)->sin_addr, addr_str, sizeof(addr_str) - 1);
         }
 
         ESP_LOGI(TAG, "Socket accepted ip address: %s", addr_str);
@@ -121,4 +121,3 @@ CLEAN_UP:
     close(listen_sock);
     vTaskDelete(NULL);
 }
-
