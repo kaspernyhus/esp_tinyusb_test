@@ -116,6 +116,8 @@ bool tud_audio_tx_done_post_load_cb(uint8_t rhport, uint16_t n_bytes_copied, uin
 void app_main(void)
 {
     ESP_LOGI(TAG, "------------ app_main -----------");
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
 
 #if CONFIG_ESP_TINYUSB_CDC_ENABLED
     tinyusb_config_cdcacm_t acm_cfg = {
