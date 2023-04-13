@@ -138,7 +138,7 @@ void app_main(void)
 
 #if CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
     tusb_net_init();
-    // xTaskCreate(tcp_server_task, "tcp_server", 4096, (void*)1234, 4, NULL);
+    xTaskCreate(tcp_server_task, "tcp_server", 4096, (void*)1234, 4, NULL);
     server = start_webserver();
 #endif
 

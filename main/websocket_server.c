@@ -139,7 +139,7 @@ httpd_handle_t start_webserver(void)
     return NULL;
 }
 
-static void stop_webserver(httpd_handle_t server)
+void stop_webserver(httpd_handle_t server)
 {
     // Stop the httpd server
     httpd_stop(server);
