@@ -12,3 +12,15 @@ in addition to the following from the esp-idf implementation:
 
 
 NB: Work in progress!
+
+#### TCP Server test
+Listening on port 1234. To test run:
+```
+$ nc 10.0.0.1 1234
+```
+
+#### Websocket server test
+To test run:
+```
+$ websocat ws://10.0.0.1/ws
+```
