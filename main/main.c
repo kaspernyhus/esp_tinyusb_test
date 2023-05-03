@@ -138,7 +138,7 @@ void app_main(void)
     tusb_audio_init();
 #endif
 
-#if CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS
+#if CONFIG_ESP_TINYUSB_NET_MODE_ECM_RNDIS || CONFIG_ESP_TINYUSB_NET_MODE_NCM
     tusb_net_init();
     xTaskCreate(tcp_server_task, "tcp_server", 4096, (void*)1234, 4, NULL);
     server = start_webserver();
