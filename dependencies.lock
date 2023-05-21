@@ -4,6 +4,20 @@ dependencies:
     source:
       type: idf
     version: 4.4.4
-manifest_hash: dcf4d39b94252de130019eadceb989d72b0dbc26b552cfdcbb50f6da531d2b92
+  signal_generator:
+    component_hash: 722592cd80ff0748b0cafee88ce31ff1eb4487b2147775ca16d204f5129aed75
+    source:
+      git: git@github.com:kaspernyhus/esp_signal_generator.git
+      path: .
+      type: git
+    version: 61c41373fdb99ebe4b2a02a67de7317cbf301115
+  tinyusb_extra_features:
+    component_hash: d640696937a07056bb318b10c3e42328d160dac828b7b4dc1cf586f499b92472
+    source:
+      git: git@github.com:kaspernyhus/esp_tinyusb_features.git
+      path: .
+      type: git
+    version: ba987bf8edeb9a39cb55b303f55030161f07b580
+manifest_hash: 42336f13663c05f5bae75092b5a3dd974d8e86a2aaff30a420ed158681808bc2
 target: esp32s3
 version: 1.0.0

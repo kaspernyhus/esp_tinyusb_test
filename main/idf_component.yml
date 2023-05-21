@@ -1,0 +1,7 @@
+## IDF Component Manager Manifest File
+dependencies:
+  tinyusb_extra_features:
+    git: git@github.com:kaspernyhus/esp_tinyusb_features.git
+
+  signal_generator:
+    git: git@github.com:kaspernyhus/esp_signal_generator.git

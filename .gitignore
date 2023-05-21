@@ -3,3 +3,6 @@ build
 .devcontainer
 sdkconfig
 sdkconfig.old
+.cache
+managed_components
+dependencies.lock
